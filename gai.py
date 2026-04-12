@@ -22,7 +22,6 @@ def conectar_planilha():
     ]
     creds = Credentials.from_service_account_info(creds_dict, scopes=escopos)
     client = gspread.authorize(creds)
-    # CONECTA À PLANILHA CENTRAL DE TOKENS
     return client.open("Controle_Tokens").sheet1 
 
 try:
@@ -33,7 +32,6 @@ except Exception as e:
 # =============================================================
 
 def enviar_email_resultados(nome, token, data_nasc, idade, perguntas, respostas):
-    # Lógica de Cálculo GAI
     total_concordo = sum(1 for r in respostas.values() if r == "Concordo")
     total_discordo = sum(1 for r in respostas.values() if r == "Discordo")
     
@@ -77,7 +75,7 @@ def enviar_email_resultados(nome, token, data_nasc, idade, perguntas, respostas)
 
 st.set_page_config(page_title="GAI", layout="centered")
 
-# Estilização do botão em Azul (Forçado)
+# CSS para Título Centralizado e Botão Azul
 st.markdown("""
     <style>
     div[data-testid="stFormSubmitButton"] > button {
@@ -102,24 +100,23 @@ if "avaliacao_concluida" not in st.session_state:
 # Título Centralizado
 st.markdown("<h1 style='text-align: center;'>Clínica de Psicologia e Psicanálise Bruna Ligoski</h1>", unsafe_allow_html=True)
 
-# ================= TELA FINAL (PÓS-ENVIO) =================
+# TELA FINAL
 if st.session_state.avaliacao_concluida:
     st.success("Avaliação concluída e enviada com sucesso! Muito obrigado(a) pela sua colaboração.")
     st.stop()
 
-# ================= VALIDAÇÃO AUTOMÁTICA DO TOKEN =================
+# ================= VALIDAÇÃO SILENCIOSA DO TOKEN =================
 parametros = st.query_params
 token_url = parametros.get("token", None)
 
 if not token_url:
-    st.warning("⚠️ Link de acesso inválido ou incompleto. Solicite um novo link à profissional.")
+    st.warning("⚠️ Link de acesso inválido. Solicite um novo link à profissional.")
     st.stop()
 
 try:
     registros = planilha.get_all_records()
     dados_token = None
     linha_alvo = 2 
-    
     for i, reg in enumerate(registros):
         if str(reg.get("Token")) == token_url:
             dados_token = reg
@@ -129,14 +126,12 @@ try:
     if not dados_token or dados_token.get("Status") != "Aberto":
         st.error("⚠️ Este link é inválido ou já foi utilizado.")
         st.stop()
-
 except Exception:
-    st.error("Erro técnico na validação do link. Tente novamente mais tarde.")
+    st.error("Erro na validação do link.")
     st.stop()
 
 # ================= QUESTIONÁRIO GAI =================
 linha_fina = "<hr style='margin-top: 8px; margin-bottom: 8px;'/>"
-
 st.markdown(linha_fina, unsafe_allow_html=True)
 st.markdown("<h3 style='text-align: center;'>Avaliação Geriatric Anxiety Inventory (GAI)</h3>", unsafe_allow_html=True)
 st.markdown(linha_fina, unsafe_allow_html=True)
@@ -181,11 +176,11 @@ with st.form("form_gai"):
         respostas_coletadas[i] = st.radio(f"q_{i}", opcoes_respostas, index=None, label_visibility="collapsed")
         st.divider()
 
-    st.markdown("<small>Fonte: Pachana, N. A., et al. (2006). Development and validation of the Geriatric Anxiety Inventory. International Psychogeriatrics, 19(1), 103-114.</small>", unsafe_allow_html=True)
+    st.markdown("<small>Fonte: Pachana, N. A., et al. (2006). Geriatric Anxiety Inventory.</small>", unsafe_allow_html=True)
 
     if st.form_submit_button("Enviar Avaliação"):
         if not nome_paciente or data_nasc is None or any(r is None for r in respostas_coletadas.values()):
-            st.error("Por favor, preencha o nome, data de nascimento e responda todas as questões.")
+            st.error("Por favor, preencha todos os campos e responda todas as questões.")
         else:
             hoje = datetime.today().date()
             idade = hoje.year - data_nasc.year - ((hoje.month, hoje.day) < (data_nasc.month, data_nasc.day))
@@ -199,4 +194,4 @@ with st.form("form_gai"):
                     st.session_state.avaliacao_concluida = True
                     st.rerun()
             else:
-                st.error("Erro ao enviar. Tente novamente ou contate a profissional.")
+                st.error("Erro ao enviar.")
