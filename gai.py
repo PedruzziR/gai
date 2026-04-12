@@ -35,7 +35,7 @@ def enviar_email_resultados(nome, cpf, data_nasc, idade, perguntas, respostas):
     assunto = f"Resultados GAI - Paciente: {nome}"
     
     corpo = f"Avaliação GAI concluída.\n\n"
-    corpo += f"=== DADOS DO(A) PACIENTE ===\n"
+    corpo += f"=== DADOS DO(A) PACIENTE ===\n\n"
     corpo += f"Nome Completo: {nome}\n"
     corpo += f"Data de Nascimento: {data_nasc}\n"
     corpo += f"CPF (Login): {cpf}\n"
@@ -100,7 +100,6 @@ elif st.session_state.avaliacao_concluida:
 
 # ================= QUESTIONÁRIO GAI =================
 else:
-    st.write("### GAI")
     st.write("Por favor, responda o questionário a seguir de acordo com o modo como se tem sentido durante a última semana.")
     st.divider()
     
