@@ -22,27 +22,39 @@ def conectar_planilha():
     ]
     creds = Credentials.from_service_account_info(creds_dict, scopes=escopos)
     client = gspread.authorize(creds)
-    return client.open("GAI").sheet1  # Aponta para a nova planilha GAI
+    # CONECTA À PLANILHA CENTRAL DE TOKENS
+    return client.open("Controle_Tokens").sheet1 
 
 try:
     planilha = conectar_planilha()
 except Exception as e:
-    st.error(f"Erro de conexão: {e}")
+    st.error(f"Erro de conexão com a planilha de controle: {e}")
     st.stop()
 # =============================================================
 
-def enviar_email_resultados(nome, cpf, data_nasc, idade, perguntas, respostas):
+def enviar_email_resultados(nome, token, data_nasc, idade, perguntas, respostas):
+    # Lógica de Cálculo GAI
+    total_concordo = sum(1 for r in respostas.values() if r == "Concordo")
+    total_discordo = sum(1 for r in respostas.values() if r == "Discordo")
+    
+    classificacao = "CLÍNICO (Indicativo de sintomas de ansiedade)" if total_concordo >= 13 else "NÃO CLÍNICO"
+
     assunto = f"Resultados GAI - Paciente: {nome}"
     
-    corpo = f"Avaliação GAI concluída.\n\n"
+    corpo = f"Avaliação GAI (Geriatric Anxiety Inventory) concluída.\n\n"
     corpo += f"=== DADOS DO(A) PACIENTE ===\n\n"
     corpo += f"Nome Completo: {nome}\n"
     corpo += f"Data de Nascimento: {data_nasc}\n"
-    corpo += f"CPF (Login): {cpf}\n"
-    corpo += f"Idade Calculada: {idade} anos\n\n"
-    corpo += "================ RESULTADOS ================\n\n"
+    corpo += f"Idade Calculada: {idade} anos\n"
+    corpo += f"Token de Validação: {token}\n\n"
     
-    # Adiciona cada pergunta e a resposta do paciente logo abaixo
+    corpo += f"=== RESUMO DO SCORE ===\n"
+    corpo += f"CONCORDO: {total_concordo}\n"
+    corpo += f"DISCORDO: {total_discordo}\n"
+    corpo += f"RESULTADO: {classificacao}\n"
+    corpo += f"Ponto de corte: >= 13 pontos para Clínico.\n\n"
+    
+    corpo += "================ RESPOSTAS ================\n\n"
     for i, pergunta in enumerate(perguntas):
         corpo += f"{pergunta}\n"
         corpo += f"Resposta: {respostas[i]}\n\n"
@@ -65,102 +77,126 @@ def enviar_email_resultados(nome, cpf, data_nasc, idade, perguntas, respostas):
 
 st.set_page_config(page_title="GAI", layout="centered")
 
-if "logado" not in st.session_state:
-    st.session_state.logado = False
+# Estilização do botão em Azul (Forçado)
+st.markdown("""
+    <style>
+    div[data-testid="stFormSubmitButton"] > button {
+        background-color: #0047AB !important;
+        color: white !important;
+        border: none !important;
+        padding: 0.6rem 2.5rem !important;
+        border-radius: 8px !important;
+        font-weight: bold !important;
+        font-size: 16px !important;
+    }
+    div[data-testid="stFormSubmitButton"] > button:hover {
+        background-color: #003380 !important;
+        color: white !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 if "avaliacao_concluida" not in st.session_state:
     st.session_state.avaliacao_concluida = False
 
-st.title("Clínica de Psicologia e Psicanálise Bruna Ligoski")
+# Título Centralizado
+st.markdown("<h1 style='text-align: center;'>Clínica de Psicologia e Psicanálise Bruna Ligoski</h1>", unsafe_allow_html=True)
 
-# ================= TELA DE LOGIN =================
-if not st.session_state.logado:
-    st.write("Bem-vindo(a) à Avaliação GAI.")
+# ================= TELA FINAL (PÓS-ENVIO) =================
+if st.session_state.avaliacao_concluida:
+    st.success("Avaliação concluída e enviada com sucesso! Muito obrigado(a) pela sua colaboração.")
+    st.stop()
+
+# ================= VALIDAÇÃO AUTOMÁTICA DO TOKEN =================
+parametros = st.query_params
+token_url = parametros.get("token", None)
+
+if not token_url:
+    st.warning("⚠️ Link de acesso inválido ou incompleto. Solicite um novo link à profissional.")
+    st.stop()
+
+try:
+    registros = planilha.get_all_records()
+    dados_token = None
+    linha_alvo = 2 
     
-    with st.form("form_login"):
-        cpf_input = st.text_input("CPF do Paciente (Apenas números)")
-        senha_input = st.text_input("Senha", type="password")
-        if st.form_submit_button("Acessar"):
-            if senha_input == st.secrets["SENHA_MESTRA"]:
-                try:
-                    cpfs = planilha.col_values(1)
-                except:
-                    cpfs = []
-                if cpf_input in cpfs:
-                    st.error("Acesso bloqueado. CPF já registrado.")
-                else:
-                    st.session_state.logado = True
-                    st.session_state.cpf_paciente = cpf_input
-                    st.rerun()
-            else:
-                st.error("Senha incorreta.")
+    for i, reg in enumerate(registros):
+        if str(reg.get("Token")) == token_url:
+            dados_token = reg
+            linha_alvo += i
+            break
+            
+    if not dados_token or dados_token.get("Status") != "Aberto":
+        st.error("⚠️ Este link é inválido ou já foi utilizado.")
+        st.stop()
 
-# ================= TELA FINAL =================
-elif st.session_state.avaliacao_concluida:
-    st.success("Avaliação concluída e enviada com sucesso! Muito obrigado pela sua colaboração.")
+except Exception:
+    st.error("Erro técnico na validação do link. Tente novamente mais tarde.")
+    st.stop()
 
 # ================= QUESTIONÁRIO GAI =================
-else:
-    st.write("Por favor, responda o questionário a seguir de acordo com o modo como se tem sentido durante a última semana.")
+linha_fina = "<hr style='margin-top: 8px; margin-bottom: 8px;'/>"
+
+st.markdown(linha_fina, unsafe_allow_html=True)
+st.markdown("<h3 style='text-align: center;'>Avaliação Geriatric Anxiety Inventory (GAI)</h3>", unsafe_allow_html=True)
+st.markdown(linha_fina, unsafe_allow_html=True)
+
+st.write("Por favor, responda o questionário a seguir de acordo com o modo como se tem sentido durante a última semana.")
+st.markdown(linha_fina, unsafe_allow_html=True)
+
+perguntas = [
+    "1. Ando preocupado(a) a maior parte do tempo.",
+    "2. Tenho dificuldades em tomar decisões.",
+    "3. Sinto-me inquieto(a) muitas vezes.",
+    "4. Tenho dificuldade em relaxar.",
+    "5. Muitas vezes não consigo apreciar as coisas por causa das minhas preocupações.",
+    "6. Coisas sem importância preocupam-me bastante.",
+    "7. Sinto muitas vezes um aperto no estômago.",
+    "8. Vejo-me como uma pessoa preocupada.",
+    "9. Não consigo evitar preocupar-me, mesmo com coisas menores.",
+    "10. Sinto-me muitas vezes nervoso(a).",
+    "11. Muitas vezes os meus próprios pensamentos põem-me ansioso(a).",
+    "12. Fico com o estômago às voltas devido à minha preocupação constante.",
+    "13. Vejo-me como uma pessoa nervosa.",
+    "14. Estou sempre à espera que aconteça o pior.",
+    "15. Muitas vezes sinto-me agitado(a) interiormente.",
+    "16. Acho que as minhas preocupações interferem com a minha vida.",
+    "17. Muitas vezes sou dominado(a) pelas minhas preocupações.",
+    "18. Por vezes sinto um nó grande no estômago.",
+    "19. Deixo de me envolver nas coisas por me preocupar demasiado.",
+    "20. Muitas vezes sinto-me aflito(a)."
+]
+
+opcoes_respostas = ["Concordo", "Discordo"]
+
+with st.form("form_gai"):
+    st.subheader("Identificação do(a) Paciente")
+    nome_paciente = st.text_input("Nome Completo *")
+    data_nasc = st.date_input("Data de Nascimento *", value=None, format="DD/MM/YYYY", min_value=datetime(1900, 1, 1), max_value=datetime.today())
     st.divider()
-    
-    perguntas = [
-        "1. Ando preocupado(a) a maior parte do tempo.",
-        "2. Tenho dificuldades em tomar decisões.",
-        "3. Sinto-me inquieto(a) muitas vezes.",
-        "4. Tenho dificuldade em relaxar.",
-        "5. Muitas vezes não consigo apreciar as coisas por causa das minhas preocupações.",
-        "6. Coisas sem importância preocupam-me bastante.",
-        "7. Sinto muitas vezes um aperto no estômago.",
-        "8. Vejo-me como uma pessoa preocupada.",
-        "9. Não consigo evitar preocupar-me, mesmo com coisas menores.",
-        "10. Sinto-me muitas vezes nervoso (a).",
-        "11. Muitas vezes os meus próprios pensamentos põem-me ansioso(a).",
-        "12. Fico com o estômago às voltas devido à minha preocupação constante.",
-        "13. Vejo-me como uma pessoa nervosa.",
-        "14. Estou sempre à espera que aconteça o pior.",
-        "15. Muitas vezes sinto-me agitado(a) interiormente.",
-        "16. Acho que as minhas preocupações interferem com a minha vida.",
-        "17. Muitas vezes sou dominado(a) pelas minhas preocupações.",
-        "18. Por vezes sinto um nó grande no estômago.",
-        "19. Deixo de me envolver nas coisas por me preocupar demasiado.",
-        "20. Muitas vezes sinto-me aflito(a)."
-    ]
 
-    opcoes_respostas = ["Concordo", "Discordo"]
-
-    with st.form("formulario_avaliacao"):
-        st.subheader("Identificação do Paciente")
-        nome_paciente = st.text_input("Nome Completo *")
-        
-        # Calendário iniciando em branco (value=None)
-        data_nasc = st.date_input("Data de Nascimento *", value=None, format="DD/MM/YYYY", min_value=datetime(1900, 1, 1), max_value=datetime.today())
+    respostas_coletadas = {}
+    for i, p in enumerate(perguntas):
+        st.write(f"**{p}**")
+        respostas_coletadas[i] = st.radio(f"q_{i}", opcoes_respostas, index=None, label_visibility="collapsed")
         st.divider()
 
-        respostas_coletadas = {}
-        for i, p in enumerate(perguntas):
-            st.write(f"**{p}**")
-            respostas_coletadas[i] = st.radio(f"q_{i}", opcoes_respostas, index=None, label_visibility="collapsed")
-            st.write("---")
+    st.markdown("<small>Fonte: Pachana, N. A., et al. (2006). Development and validation of the Geriatric Anxiety Inventory. International Psychogeriatrics, 19(1), 103-114.</small>", unsafe_allow_html=True)
 
-        # Citação em letras menores no final do formulário
-        st.markdown("<small>Fonte: Pachana, N. A., Byrne, G. J, Siddle, H., Koloski, N., Harley, E., & Arnold, E. (2006). Development and validation of the Geriatric Anxiety Inventory. International Psychogeriatrics, 19(1), 103-114.</small>", unsafe_allow_html=True)
-        st.write("") # Espaço antes do botão
-
-        if st.form_submit_button("Finalizar"):
-            # Validação: verifica se nome e data foram preenchidos e se todas as 20 perguntas têm resposta
-            if not nome_paciente or data_nasc is None or any(r is None for r in respostas_coletadas.values()):
-                st.error("Preencha todos os campos e responda todas as questões.")
-            else:
-                hoje = datetime.today().date()
-                idade = hoje.year - data_nasc.year - ((hoje.month, hoje.day) < (data_nasc.month, data_nasc.day))
-                
-                # Envia o e-mail passando a lista de perguntas e o dicionário de respostas
-                if enviar_email_resultados(nome_paciente, st.session_state.cpf_paciente, data_nasc.strftime("%d/%m/%Y"), idade, perguntas, respostas_coletadas):
-                    try:
-                        planilha.append_row([st.session_state.cpf_paciente])
-                    except:
-                        pass
+    if st.form_submit_button("Enviar Avaliação"):
+        if not nome_paciente or data_nasc is None or any(r is None for r in respostas_coletadas.values()):
+            st.error("Por favor, preencha o nome, data de nascimento e responda todas as questões.")
+        else:
+            hoje = datetime.today().date()
+            idade = hoje.year - data_nasc.year - ((hoje.month, hoje.day) < (data_nasc.month, data_nasc.day))
+            
+            if enviar_email_resultados(nome_paciente, token_url, data_nasc.strftime("%d/%m/%Y"), idade, perguntas, respostas_coletadas):
+                try:
+                    planilha.update_cell(linha_alvo, 5, "Respondido")
                     st.session_state.avaliacao_concluida = True
                     st.rerun()
-                else:
-                    st.error("Houve um erro no envio. Avise a profissional responsável.")
+                except:
+                    st.session_state.avaliacao_concluida = True
+                    st.rerun()
+            else:
+                st.error("Erro ao enviar. Tente novamente ou contate a profissional.")
