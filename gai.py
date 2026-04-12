@@ -46,7 +46,7 @@ def enviar_email_resultados(nome, token, data_nasc, idade, perguntas, respostas)
     corpo += f"Idade Calculada: {idade} anos\n"
     corpo += f"Token de Validação: {token}\n\n"
     
-    corpo += f"=== RESUMO DO SCORE ===\n"
+    corpo += f"=== RESUMO DO SCORE ===\n\n"
     corpo += f"CONCORDO: {total_concordo}\n"
     corpo += f"DISCORDO: {total_discordo}\n"
     corpo += f"RESULTADO: {classificacao}\n"
