@@ -6,6 +6,48 @@ import json
 import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
+import base64 # <-- IMPORTAÇÃO NECESSÁRIA PARA A MARCA D'ÁGUA
+
+# ================= BLOCO 1: MARCA D'ÁGUA FRONTAL (OVERLAY DEFINITIVO) =================
+def inject_watermark(nome_paciente, id_sessao):
+    paciente_display = nome_paciente if nome_paciente else "PACIENTE NÃO IDENTIFICADO"
+    token_display = id_sessao if id_sessao else "TOKEN"
+    
+    # Criamos o desenho em SVG
+    svg = f"""
+    <svg xmlns="http://www.w3.org/2000/svg" width="300" height="300">
+        <g transform="translate(150,150) rotate(-45)">
+            <text text-anchor="middle" fill="rgba(140, 140, 140, 0.3)" font-size="22" font-family="Arial, sans-serif" font-weight="bold">
+                <tspan x="0" dy="-25">INSTRUMENTO SIGILOSO</tspan>
+                <tspan x="0" dy="25">{paciente_display}</tspan>
+                <tspan x="0" dy="25">{token_display}</tspan>
+            </text>
+        </g>
+    </svg>
+    """
+    
+    # Conversão para Base64
+    b64_svg = base64.b64encode(svg.encode('utf-8')).decode('utf-8')
+    
+    # Injeção no ::after do contêiner principal para criar uma película POR CIMA de tudo
+    watermark_style = f"""
+    <style>
+    [data-testid="stAppViewContainer"]::after {{
+        content: "";
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 100vw !important;
+        height: 100vh !important;
+        background-image: url("data:image/svg+xml;base64,{b64_svg}") !important;
+        background-repeat: repeat !important;
+        background-position: center !important;
+        pointer-events: none !important;
+        z-index: 9999999 !important;
+    }}
+    </style>
+    """
+    st.markdown(watermark_style, unsafe_allow_html=True)
 
 # ================= CONFIGURAÇÕES DE E-MAIL =================
 SEU_EMAIL = st.secrets["EMAIL_USUARIO"]
@@ -105,9 +147,10 @@ if st.session_state.avaliacao_concluida:
     st.success("Avaliação concluída e enviada com sucesso! Muito obrigado(a) pela sua colaboração.")
     st.stop()
 
-# ================= VALIDAÇÃO SILENCIOSA DO TOKEN =================
+# ================= VALIDAÇÃO SILENCIOSA DO TOKEN E SMART LINK =================
 parametros = st.query_params
 token_url = parametros.get("token", None)
+nome_na_url = parametros.get("nome", "") # Captura do link inteligente
 
 if not token_url:
     st.warning("⚠️ Link de acesso inválido. Solicite um novo link à profissional.")
@@ -139,6 +182,16 @@ st.markdown(linha_fina, unsafe_allow_html=True)
 st.write("Por favor, responda o questionário a seguir de acordo com o modo como se tem sentido durante a última semana.")
 st.markdown(linha_fina, unsafe_allow_html=True)
 
+# --- IDENTIFICAÇÃO FORA DO FORMULÁRIO (Para atualizar a marca d'água dinamicamente) ---
+st.subheader("Identificação do(a) Paciente")
+nome_paciente = st.text_input("Nome Completo *", value=nome_na_url)
+data_nasc = st.date_input("Data de Nascimento *", value=None, format="DD/MM/YYYY", min_value=datetime(1900, 1, 1), max_value=datetime.today())
+
+# --- ATIVA A MARCA D'ÁGUA ---
+inject_watermark(nome_paciente, token_url)
+
+st.divider()
+
 perguntas = [
     "1. Ando preocupado(a) a maior parte do tempo.",
     "2. Tenho dificuldades em tomar decisões.",
@@ -165,11 +218,6 @@ perguntas = [
 opcoes_respostas = ["Concordo", "Discordo"]
 
 with st.form("form_gai"):
-    st.subheader("Identificação do(a) Paciente")
-    nome_paciente = st.text_input("Nome Completo *")
-    data_nasc = st.date_input("Data de Nascimento *", value=None, format="DD/MM/YYYY", min_value=datetime(1900, 1, 1), max_value=datetime.today())
-    st.divider()
-
     respostas_coletadas = {}
     for i, p in enumerate(perguntas):
         st.write(f"**{p}**")
